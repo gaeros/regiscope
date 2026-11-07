@@ -12,14 +12,16 @@
 
 namespace {
 
-enum : int { ID_PREVIEW = 401, ID_PHOTO, ID_POSITION, ID_RECORD, ID_SENSORS };
+enum : int { ID_PREVIEW = 401, ID_PHOTO, ID_POSITION, ID_RECORD, ID_SENSORS, ID_PLAY };
 constexpr UINT_PTR kBatteryTimer = 7;
+constexpr UINT_PTR kRecordTimer = 8; // aggiorna il conto alla rovescia della registrazione
+constexpr int kRecordMs = 10000;
 
 HWND g_wnd = nullptr;
 HINSTANCE g_inst = nullptr;
 PanelFonts g_fonts;
-HWND g_buttons[5] = {};
-const wchar_t *const kButtonText[5] = {L"Anteprima", L"Scatta", L"Aggiorna", L"Registra 2 s", L"Aggiorna"};
+HWND g_buttons[6] = {};
+const wchar_t *const kButtonText[6] = {L"Anteprima", L"Scatta", L"Aggiorna", L"Registra 10 s", L"Aggiorna", L"Ascolta"};
 
 int S(int v) { return MulDiv(v, g_fonts.dpi, 96); }
 
@@ -221,7 +223,13 @@ void PaintMic(HDC dc, const dev::State &st) {
     int lh = LineH(dc, g_fonts.smallFont);
     const dev::Audio &a = st.audio;
     std::wstring info;
-    if (st.audioBusy) info = L"Registrazione in corso… parla vicino al microfono";
+    if (st.audioBusy) {
+        int elapsed = (int)(GetTickCount() - st.recordStart);
+        int left = std::max(0, (st.recordMs - elapsed + 999) / 1000);
+        wchar_t buf[96];
+        swprintf(buf, 96, L"Registrazione in corso… ancora %d s (parla vicino al microfono)", left);
+        info = buf;
+    } else if (st.playing) info = L"Riproduzione in corso…";
     else if (!a.valid) info = a.message.empty() ? L"Premi Registra o usa microfono_registra() in uno snippet." : a.message;
     else {
         int peak = 0;
@@ -366,7 +374,8 @@ void Layout(int w, int h) {
     r = place(g_buttons[1], g_camera, r, S(76));
     place(g_buttons[0], g_camera, r, S(92));
     place(g_buttons[2], g_position, g_position.rc.right - S(10), S(80));
-    place(g_buttons[3], g_mic, g_mic.rc.right - S(10), S(100));
+    r = place(g_buttons[3], g_mic, g_mic.rc.right - S(10), S(108));
+    place(g_buttons[5], g_mic, r, S(80));
     place(g_buttons[4], g_sensors, g_sensors.rc.right - S(10), S(80));
 }
 
@@ -375,18 +384,23 @@ void UpdateButtons() {
     SetWindowTextW(g_buttons[0], st.previewOn ? L"Ferma anteprima" : L"Anteprima");
     EnableWindow(g_buttons[2], !st.positionBusy);
     EnableWindow(g_buttons[3], !st.audioBusy);
+    EnableWindow(g_buttons[5], !st.audioBusy && st.audio.valid);
+    if (st.audioBusy) SetTimer(g_wnd, kRecordTimer, 250, nullptr);
+    else KillTimer(g_wnd, kRecordTimer);
     InvalidateRect(g_buttons[0], nullptr, FALSE);
 }
 
 LRESULT CALLBACK DevicesProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
     case WM_CREATE:
-        for (int i = 0; i < 5; ++i) {
+        g_wnd = hwnd;
+        for (int i = 0; i < 6; ++i) {
             g_buttons[i] = CreateWindowExW(0, L"BUTTON", kButtonText[i], WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, 0, 0,
                                            10, 10, hwnd, (HMENU)(INT_PTR)(ID_PREVIEW + i), g_inst, nullptr);
             SendMessageW(g_buttons[i], WM_SETFONT, (WPARAM)g_fonts.ui, TRUE);
         }
         dev::SetWindow(hwnd);
+        UpdateButtons();
         return 0;
     case WM_SIZE:
         Layout(LOWORD(lp), HIWORD(lp));
@@ -410,7 +424,8 @@ LRESULT CALLBACK DevicesProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         case ID_PREVIEW: dev::TogglePreview(); break;
         case ID_PHOTO: dev::TakePhotoAsync(); break;
         case ID_POSITION: dev::UpdatePositionAsync(); break;
-        case ID_RECORD: dev::RecordAsync(2000); break;
+        case ID_RECORD: dev::RecordAsync(kRecordMs); break;
+        case ID_PLAY: dev::PlayLastRecording(); break;
         case ID_SENSORS: dev::UpdateBatteryAndSensorsAsync(); break;
         }
         UpdateButtons();
@@ -426,6 +441,7 @@ LRESULT CALLBACK DevicesProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     }
     case WM_TIMER:
         if (wp == kBatteryTimer) dev::UpdateBatteryAndSensorsAsync();
+        if (wp == kRecordTimer) InvalidateRect(hwnd, nullptr, FALSE);
         return 0;
     case WM_SHOWWINDOW:
         if (wp) {

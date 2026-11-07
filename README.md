@@ -84,7 +84,7 @@ Ogni esercizio spiega *cosa impari*, *cosa guardare* nei pannelli RAM e CPU e ch
 
 Apre una seconda finestra con cinque riquadri: **Fotocamera** (anteprima dal vivo, Scatta, e il pixel
 al centro mostrato byte per byte), **Posizione** (con i 64 bit della latitudine), **Microfono**
-(registra 2 secondi e mostra la forma d'onda), **Batteria** e **Sensori** (luce, accelerometro).
+(registra 10 secondi, mostra la forma d'onda e con Ascolta la fa risentire), **Batteria** e **Sensori** (luce, accelerometro).
 
 Gli snippet possono usare le stesse periferiche con `#include <periferiche.h>`:
 
@@ -95,6 +95,7 @@ Gli snippet possono usare le stesse periferiche con `#include <periferiche.h>`:
 | `mostra_immagine(rgb, L, A)` | mostra un'immagine nella finestra Periferiche |
 | `posizione_leggi(&lat, &lon, &precisione)` | posizione in gradi e precisione in metri |
 | `microfono_registra(campioni, n)` | n campioni a 16000 al secondo (short) |
+| `altoparlante_suona(campioni, n)` | fa ascoltare dei campioni |
 | `batteria_leggi(&percentuale, &in_carica)` | stato della batteria |
 | `luce_leggi(&lux)`, `accelerometro_leggi(&x, &y, &z)` | sensori (se presenti) |
 

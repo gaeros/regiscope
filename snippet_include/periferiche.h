@@ -17,6 +17,10 @@ int posizione_leggi(double *latitudine, double *longitudine, double *precisione)
    Restituisce quanti campioni ha registrato (0 se errore). */
 int microfono_registra(short *campioni, int quanti);
 
+/* Altoparlante: fa ascoltare dei campioni (16000 al secondo), per esempio
+   quelli registrati dal microfono. Non aspetta la fine del suono. */
+void altoparlante_suona(const short *campioni, int quanti);
+
 /* Batteria: percentuale 0-100, in_carica 1 se collegato alla corrente. */
 int batteria_leggi(int *percentuale, int *in_carica);
 

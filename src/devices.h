@@ -58,6 +58,9 @@ struct State {
     bool positionBusy = false;
     Audio audio;
     bool audioBusy = false;
+    DWORD recordStart = 0; // GetTickCount() all'inizio della registrazione
+    int recordMs = 0;      // durata prevista
+    bool playing = false;
     Battery battery;
     Sensors sensors;
 };
@@ -75,6 +78,7 @@ void TogglePreview();
 void TakePhotoAsync();
 void UpdatePositionAsync();
 void RecordAsync(int milliseconds);
+void PlayLastRecording();
 void UpdateBatteryAndSensorsAsync();
 
 // Funzioni C offerte agli snippet.

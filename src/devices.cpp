@@ -501,6 +501,51 @@ Audio RecordNow(int count, int rate) {
     return a;
 }
 
+// ------------------------------------------------------------------ altoparlante
+// Costruisce un file WAV in memoria e lo fa suonare a Windows (PlaySound).
+
+std::mutex g_playMx;
+std::vector<uint8_t> g_wav;
+
+void PlaySamples(const int16_t *samples, size_t count, int rate) {
+    std::lock_guard<std::mutex> lock(g_playMx);
+    PlaySoundW(nullptr, nullptr, 0); // ferma il suono precedente prima di liberarne i dati
+    uint32_t dataBytes = (uint32_t)(count * 2);
+    g_wav.assign(44 + dataBytes, 0);
+    uint8_t *h = g_wav.data();
+    auto put32 = [](uint8_t *p, uint32_t v) { memcpy(p, &v, 4); };
+    auto put16 = [](uint8_t *p, uint16_t v) { memcpy(p, &v, 2); };
+    memcpy(h, "RIFF", 4);
+    put32(h + 4, 36 + dataBytes);
+    memcpy(h + 8, "WAVEfmt ", 8);
+    put32(h + 16, 16);
+    put16(h + 20, 1);                 // PCM
+    put16(h + 22, 1);                 // mono
+    put32(h + 24, (uint32_t)rate);
+    put32(h + 28, (uint32_t)rate * 2);
+    put16(h + 32, 2);
+    put16(h + 34, 16);
+    memcpy(h + 36, "data", 4);
+    put32(h + 40, dataBytes);
+    if (count) memcpy(h + 44, samples, dataBytes);
+    PlaySoundW(reinterpret_cast<LPCWSTR>(g_wav.data()), nullptr, SND_MEMORY | SND_ASYNC | SND_NODEFAULT);
+}
+
+void MarkPlaying(size_t count, int rate) {
+    {
+        std::lock_guard<std::mutex> lock(g_stateMx);
+        g_state.playing = true;
+    }
+    Notify();
+    DWORD ms = (DWORD)((long long)count * 1000 / rate) + 200;
+    RunDetached([ms] {
+        Sleep(ms);
+        std::lock_guard<std::mutex> lock(g_stateMx);
+        g_state.playing = false;
+        Notify();
+    });
+}
+
 // ------------------------------------------------------------------ funzioni per gli snippet
 
 void SnippetSay(const std::wstring &msg) { snippet_rt::Print("[periferiche] " + WideToUtf8(msg) + "\n"); }
@@ -611,6 +656,8 @@ int rt_microfono_registra(short *campioni, int n) {
     {
         std::lock_guard<std::mutex> lock(g_stateMx);
         g_state.audioBusy = true;
+        g_state.recordStart = GetTickCount();
+        g_state.recordMs = (int)((long long)n * 1000 / 16000);
     }
     Notify();
     Audio a;
@@ -628,6 +675,16 @@ int rt_microfono_registra(short *campioni, int n) {
     memset(campioni, 0, (size_t)n * sizeof(short));
     memcpy(campioni, a.samples.data(), a.samples.size() * sizeof(short));
     return (int)a.samples.size();
+}
+
+void rt_altoparlante_suona(const short *campioni, int n) {
+    ShowWindowFromSnippet();
+    if (!campioni || n <= 0 || n > 16000 * 60) {
+        SnippetSay(L"altoparlante_suona: numero di campioni non valido (massimo 60 secondi).");
+        return;
+    }
+    PlaySamples(reinterpret_cast<const int16_t *>(campioni), (size_t)n, 16000);
+    MarkPlaying((size_t)n, 16000);
 }
 
 int rt_batteria_leggi(int *percentuale, int *in_carica) {
@@ -767,6 +824,8 @@ void RecordAsync(int milliseconds) {
         std::lock_guard<std::mutex> lock(g_stateMx);
         if (g_state.audioBusy) return;
         g_state.audioBusy = true;
+        g_state.recordStart = GetTickCount();
+        g_state.recordMs = milliseconds;
     }
     Notify();
     RunDetached([milliseconds] {
@@ -776,6 +835,17 @@ void RecordAsync(int milliseconds) {
         g_state.audioBusy = false;
         Notify();
     });
+}
+
+void PlayLastRecording() {
+    Audio a;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMx);
+        if (!g_state.audio.valid || g_state.audioBusy) return;
+        a = g_state.audio;
+    }
+    PlaySamples(a.samples.data(), a.samples.size(), a.rate);
+    MarkPlaying(a.samples.size(), a.rate);
 }
 
 void UpdateBatteryAndSensorsAsync() {
@@ -797,6 +867,7 @@ const std::vector<snippet_rt::Symbol> &Symbols() {
         {"mostra_immagine", (const void *)&rt_mostra_immagine},
         {"posizione_leggi", (const void *)&rt_posizione_leggi},
         {"microfono_registra", (const void *)&rt_microfono_registra},
+        {"altoparlante_suona", (const void *)&rt_altoparlante_suona},
         {"batteria_leggi", (const void *)&rt_batteria_leggi},
         {"luce_leggi", (const void *)&rt_luce_leggi},
         {"accelerometro_leggi", (const void *)&rt_accelerometro_leggi},
