@@ -170,6 +170,8 @@ std::vector<HeapBlock> SnapshotHeap(size_t maxBytes) {
     return out;
 }
 
+void Print(const std::string &utf8) { Emit(utf8); }
+
 const std::vector<Symbol> &Symbols() {
     static const std::vector<Symbol> table = {
         {"printf", (const void *)&rt_printf},   {"puts", (const void *)&rt_puts},

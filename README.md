@@ -73,8 +73,34 @@ che la seconda riga del commento iniziale sia il titolo.
 | 10_struct.c | Struct | 5 |
 | 11_ricorsione.c | Ricorsione | 6 |
 | 12_bit.c | Operazioni sui bit | 6 |
+| 13_fotocamera.c | Fotocamera: pixel e colori | periferiche |
+| 14_posizione.c | Posizione e numeri con la virgola (double) | periferiche |
+| 15_microfono.c | Microfono: il suono come numeri | periferiche |
+| 16_batteria_sensori.c | Batteria e sensori | periferiche |
 
 Ogni esercizio spiega *cosa impari*, *cosa guardare* nei pannelli RAM e CPU e chiude con un *Prova tu*.
+
+## Periferiche (pulsante "Periferiche")
+
+Apre una seconda finestra con cinque riquadri: **Fotocamera** (anteprima dal vivo, Scatta, e il pixel
+al centro mostrato byte per byte), **Posizione** (con i 64 bit della latitudine), **Microfono**
+(registra 2 secondi e mostra la forma d'onda), **Batteria** e **Sensori** (luce, accelerometro).
+
+Gli snippet possono usare le stesse periferiche con `#include <periferiche.h>`:
+
+| Funzione | Cosa fa |
+|---|---|
+| `camera_apri()`, `camera_chiudi()` | accende / spegne la webcam |
+| `camera_scatta(rgb, L, A)` | foto ridotta a L x A pixel, 3 byte (R, G, B) per pixel |
+| `mostra_immagine(rgb, L, A)` | mostra un'immagine nella finestra Periferiche |
+| `posizione_leggi(&lat, &lon, &precisione)` | posizione in gradi e precisione in metri |
+| `microfono_registra(campioni, n)` | n campioni a 16000 al secondo (short) |
+| `batteria_leggi(&percentuale, &in_carica)` | stato della batteria |
+| `luce_leggi(&lux)`, `accelerometro_leggi(&x, &y, &z)` | sensori (se presenti) |
+
+Tutte restituiscono 1 se è andata bene, 0 se no (il motivo compare nell'output).
+Windows chiede i permessi in Impostazioni → Privacy e sicurezza (Fotocamera, Posizione, Microfono);
+per la posizione va attivato anche "Consenti alle app desktop di accedere alla posizione".
 
 ## Librerie disponibili negli snippet
 

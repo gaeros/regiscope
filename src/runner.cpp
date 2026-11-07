@@ -1,4 +1,5 @@
 #include "runner.h"
+#include "devices.h"
 #include "messages.h"
 
 #include <cstring>
@@ -164,6 +165,7 @@ bool Runner::Compile(const std::string &source, std::wstring &log) {
     if (ok) ok = tcc_add_file(tcc_, (runtimeDir + "\\chkstk.S").c_str()) != -1;
     if (ok) {
         for (const auto &sym : snippet_rt::Symbols()) tcc_add_symbol(tcc_, sym.name, sym.addr);
+        for (const auto &sym : dev::Symbols()) tcc_add_symbol(tcc_, sym.name, sym.addr);
         lines_ = regiscope_capture_lines(tcc_);
         ok = tcc_relocate(tcc_) >= 0;
         if (ok) textBase_ = regiscope_finish_lines(lines_, tcc_);

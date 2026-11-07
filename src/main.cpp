@@ -12,6 +12,8 @@
 
 #include <Zydis/Zydis.h>
 
+#include "devices.h"
+#include "devices_window.h"
 #include "messages.h"
 #include "panels.h"
 #include "runner.h"
@@ -28,7 +30,7 @@ namespace {
 
 enum : int {
     IDC_EDITOR = 100, IDC_OUTPUT, IDC_RAM, IDC_CPU, IDC_STATUS,
-    ID_OPEN = 200, ID_SAVE, ID_COMPILE, ID_RUN, ID_STEP, ID_STEPLINE, ID_STOP, ID_EXAMPLES,
+    ID_OPEN = 200, ID_SAVE, ID_COMPILE, ID_RUN, ID_STEP, ID_STEPLINE, ID_STOP, ID_EXAMPLES, ID_DEVICES,
     ID_EXAMPLE_FIRST = 300, // + indice dell'esercizio nel menu
 };
 
@@ -75,6 +77,7 @@ struct App {
     HWND buttons[7] = {};
     HWND gutter = nullptr;
     HWND examplesButton = nullptr;
+    HWND devicesButton = nullptr;
     std::vector<std::wstring> examplePaths;
     WNDPROC editorProc = nullptr;
     int lastFirstLine = -1, lastLineCount = -1;
@@ -610,7 +613,9 @@ void Layout(int w, int h) {
     for (int i = 0; i < 7; ++i) {
         if (i == 2) { // dopo Apri e Salva: Esempi, poi i comandi di esecuzione
             MoveWindow(app.examplesButton, x, m, S(84), barH, TRUE);
-            x += S(84) + S(6) + S(12);
+            x += S(84) + S(6);
+            MoveWindow(app.devicesButton, x, m, S(100), barH, TRUE);
+            x += S(100) + S(6) + S(12);
         }
         MoveWindow(app.buttons[i], x, m, widths[i], barH, TRUE);
         x += widths[i] + S(6);
@@ -646,6 +651,9 @@ void CreateChildren(HWND hwnd) {
     }
     app.examplesButton = CreateWindowExW(0, L"BUTTON", L"Esempi", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, 0, 0, 10,
                                          10, hwnd, (HMENU)(INT_PTR)ID_EXAMPLES, app.inst, nullptr);
+    app.devicesButton = CreateWindowExW(0, L"BUTTON", L"Periferiche", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, 0, 0,
+                                        10, 10, hwnd, (HMENU)(INT_PTR)ID_DEVICES, app.inst, nullptr);
+    dev::Init(hwnd);
     app.status = CreateWindowExW(0, L"STATIC", L"", WS_CHILD | WS_VISIBLE | SS_OWNERDRAW, 0, 0, 10, 10, hwnd,
                                  (HMENU)(INT_PTR)IDC_STATUS, app.inst, nullptr);
     SendMessageW(app.status, WM_SETFONT, (WPARAM)app.fonts.ui, TRUE);
@@ -689,7 +697,7 @@ LRESULT CALLBACK MainProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     case WM_GETMINMAXINFO: {
         auto *mm = reinterpret_cast<MINMAXINFO *>(lp);
-        mm->ptMinTrackSize = {S(960), S(600)};
+        mm->ptMinTrackSize = {S(1060), S(600)};
         return 0;
     }
     case WM_CTLCOLORSTATIC:
@@ -726,6 +734,9 @@ LRESULT CALLBACK MainProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         case ID_STEP: StartSnippet(true); return 0;
         case ID_STEPLINE: StepLine(); return 0;
         case ID_EXAMPLES: ShowExamplesMenu(); return 0;
+        case ID_DEVICES:
+            ShowDevicesWindow(hwnd, app.inst, app.fonts, LoadIconW(app.inst, MAKEINTRESOURCEW(1)));
+            return 0;
         case ID_STOP: app.runner->Stop(); return 0;
         }
         if (LOWORD(wp) >= ID_EXAMPLE_FIRST && LOWORD(wp) < ID_EXAMPLE_FIRST + 100) {
@@ -739,6 +750,10 @@ LRESULT CALLBACK MainProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         delete text;
         return 0;
     }
+    case WM_APP_SHOW_DEVICES:
+        if (!DevicesWindowVisible())
+            ShowDevicesWindow(hwnd, app.inst, app.fonts, LoadIconW(app.inst, MAKEINTRESOURCEW(1)), false);
+        return 0;
     case WM_APP_SNAPSHOT:
         OnSnapshot();
         return 0;
@@ -756,6 +771,7 @@ LRESULT CALLBACK MainProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_DESTROY:
         KillTimer(hwnd, kMemTimer);
         app.runner.reset(); // ferma lo snippet se è ancora in esecuzione
+        dev::Shutdown();
         PostQuitMessage(0);
         return 0;
     }
