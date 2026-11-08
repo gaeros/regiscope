@@ -2,5 +2,5 @@ build/
 out/
 .vs/
 CMakeSettings.json
-*.zip
-vecchi/
+build-installer/
+installer/output/

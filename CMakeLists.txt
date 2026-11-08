@@ -4,6 +4,11 @@ project(RegiScope LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Runtime C/C++ di Visual Studio incluso nell'exe (/MT): RegiScope parte su qualsiasi PC
+# senza installare il "Visual C++ Redistributable". Vale anche per Zydis e libtcc.
+set(CMAKE_POLICY_DEFAULT_CMP0091 NEW)
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+
 if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
   message(FATAL_ERROR "RegiScope va compilato a 64 bit (x64).")
 endif()
