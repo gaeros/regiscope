@@ -143,6 +143,9 @@ puoi studiarlo, modificarlo e condividerlo liberamente per scopi non commerciali
 
 Le librerie esterne non sono incluse in questo repository: CMake le scarica durante la
 configurazione e restano sotto le loro licenze.
+Il setup invece contiene TinyCC (LGPL 2.1) e Zydis/Zycore (MIT) compilati dentro RegiScope.exe:
+i loro testi di licenza sono installati nella cartella `licenze`, e chi vuole ricompilare RegiScope
+con una versione modificata di TinyCC può farlo con i sorgenti e le istruzioni di questo repository.
 
 - [TinyCC](https://github.com/TinyCC/tinycc): GNU LGPL 2.1
 - [Zydis](https://github.com/zyantific/zydis): MIT

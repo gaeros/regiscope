@@ -71,6 +71,12 @@ add_custom_command(TARGET RegiScope POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:RegiScope>/snippet_runtime
   COMMAND ${CMAKE_COMMAND} -E copy ${TCC_DIR}/lib/libtcc1.c $<TARGET_FILE_DIR:RegiScope>/snippet_runtime/
   COMMAND ${CMAKE_COMMAND} -E copy ${TCC_DIR}/win32/lib/chkstk.S $<TARGET_FILE_DIR:RegiScope>/snippet_runtime/
-  COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/esempi $<TARGET_FILE_DIR:RegiScope>/esempi)
+  COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/esempi $<TARGET_FILE_DIR:RegiScope>/esempi
+  # Licenze delle librerie incluse nell'eseguibile (richieste per distribuire il setup).
+  COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:RegiScope>/licenze
+  COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/installer/TERZE-PARTI.txt $<TARGET_FILE_DIR:RegiScope>/licenze/
+  COMMAND ${CMAKE_COMMAND} -E copy ${TCC_DIR}/COPYING $<TARGET_FILE_DIR:RegiScope>/licenze/TinyCC-LGPL-2.1.txt
+  COMMAND ${CMAKE_COMMAND} -E copy ${zydis_SOURCE_DIR}/LICENSE $<TARGET_FILE_DIR:RegiScope>/licenze/Zydis-MIT.txt
+  COMMAND ${CMAKE_COMMAND} -E copy ${zydis_SOURCE_DIR}/dependencies/zycore/LICENSE $<TARGET_FILE_DIR:RegiScope>/licenze/Zycore-MIT.txt)
 
 set_property(DIRECTORY ${CMAKE_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT RegiScope)

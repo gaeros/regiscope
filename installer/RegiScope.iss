@@ -8,7 +8,7 @@
 #ifndef AppVersion
   #define AppVersion "0.2"
 #endif
-#define AppPublisher "Gaetano Rossi"
+#define AppPublisher "gaeros"
 #define AppExe       "RegiScope.exe"
 
 ; Cartella dove CMake ha messo RegiScope.exe e le cartelle copiate accanto.
@@ -62,6 +62,7 @@ Source: "{#BuildDir}\esempi\*";              DestDir: "{app}\esempi"; Flags: ign
 Source: "..\res\regiscope.ico";              DestDir: "{app}"; Flags: ignoreversion
 Source: "..\README.md";                      DestDir: "{app}"; Flags: ignoreversion
 Source: "..\LICENSE.md";                     DestDir: "{app}"; Flags: ignoreversion
+Source: "{#BuildDir}\licenze\*";             DestDir: "{app}\licenze"; Flags: ignoreversion
 
 [Icons]
 ; Menu Start
