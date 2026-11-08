@@ -91,6 +91,12 @@ struct App {
     std::unique_ptr<Runner> runner;
     std::wstring exeDir;
     std::wstring currentFile;
+    // Divisori trascinabili: frazioni dello spazio disponibile.
+    double leftFrac = 0.40;    // colonna editor / tutta la larghezza
+    double edFrac = 0.70;      // editor / colonna sinistra
+    double ramFrac = 0.45;     // pannello RAM / colonna destra
+    RECT splitRects[3] = {};   // 0 = verticale, 1 = editor|output, 2 = RAM|CPU
+    int dragging = -1;
 } app;
 
 int S(int v) { return MulDiv(v, app.fonts.dpi, 96); }
@@ -605,6 +611,13 @@ DWORD WINAPI MemInfoThread(LPVOID hwnd) {
 
 // ------------------------------------------------------------- layout
 
+// Divide 'total' secondo 'frac', lasciando almeno minA da una parte e minB dall'altra.
+int SplitSize(int total, double frac, int minA, int minB) {
+    if (total <= 0) return 0;
+    if (total < minA + minB) return (int)((long long)total * minA / (minA + minB));
+    return std::clamp((int)(total * frac + 0.5), minA, total - minB);
+}
+
 void Layout(int w, int h) {
     int m = S(8);
     int barH = S(30);
@@ -623,18 +636,87 @@ void Layout(int w, int h) {
     MoveWindow(app.status, x + S(8), m, std::max(0, w - x - S(8) - S(12)), barH, TRUE);
 
     int top = m + barH + m;
-    int leftW = (w - 3 * m) * 2 / 5;
+    int availW = w - 3 * m;
     int availH = h - top - m;
-    int edH = availH * 7 / 10;
+    int leftW = SplitSize(availW, app.leftFrac, S(300), S(460));
+    int edH = SplitSize(availH - m, app.edFrac, S(120), S(60));
     int gw = GutterWidth();
     MoveWindow(app.gutter, m, top, gw, edH, TRUE);
     MoveWindow(app.editor, m + gw, top, leftW - gw, edH, TRUE);
     MoveWindow(app.output, m, top + edH + m, leftW, availH - edH - m, TRUE);
 
     int rx = m + leftW + m, rw = w - rx - m;
-    int ramH = (availH - m) * 9 / 20;
+    int ramH = SplitSize(availH - m, app.ramFrac, S(150), S(430)); // CPU: spazio per i 17 registri
     MoveWindow(app.ram, rx, top, rw, ramH, TRUE);
     MoveWindow(app.cpu, rx, top + ramH + m, rw, availH - ramH - m, TRUE);
+
+    app.splitRects[0] = RECT{m + leftW, top, rx, top + availH};
+    app.splitRects[1] = RECT{m, top + edH, m + leftW, top + edH + m};
+    app.splitRects[2] = RECT{rx, top + ramH, rx + rw, top + ramH + m};
+    InvalidateRect(app.main, nullptr, TRUE); // ridisegna le maniglie dei divisori
+}
+
+// ------------------------------------------------------------- divisori trascinabili
+
+int HitSplitter(POINT pt) {
+    for (int i = 0; i < 3; ++i)
+        if (PtInRect(&app.splitRects[i], pt)) return i;
+    return -1;
+}
+
+void DragSplitter(POINT pt) {
+    RECT rc;
+    GetClientRect(app.main, &rc);
+    int m = S(8), top = m + S(30) + m;
+    int availW = rc.right - 3 * m, availH = rc.bottom - top - m;
+    auto frac = [](int v, int total) { return total > 0 ? std::clamp((double)v / total, 0.0, 1.0) : 0.5; };
+    if (app.dragging == 0) app.leftFrac = frac(pt.x - m - m / 2, availW);
+    else if (app.dragging == 1) app.edFrac = frac(pt.y - top - m / 2, availH - m);
+    else if (app.dragging == 2) app.ramFrac = frac(pt.y - top - m / 2, availH - m);
+    Layout(rc.right, rc.bottom);
+}
+
+// Tre puntini al centro di ogni divisore, per far capire che si può trascinare.
+void PaintSplitters(HDC dc) {
+    SelectObject(dc, GetStockObject(DC_BRUSH));
+    SelectObject(dc, GetStockObject(NULL_PEN));
+    SetDCBrushColor(dc, theme::disabled);
+    int d = std::max(2, S(3)), gap = S(6);
+    for (int i = 0; i < 3; ++i) {
+        const RECT &r = app.splitRects[i];
+        int cx = (r.left + r.right) / 2, cy = (r.top + r.bottom) / 2;
+        for (int k = -1; k <= 1; ++k) {
+            int x = i == 0 ? cx : cx + k * gap, y = i == 0 ? cy + k * gap : cy;
+            Ellipse(dc, x - d / 2, y - d / 2, x - d / 2 + d + 1, y - d / 2 + d + 1);
+        }
+    }
+}
+
+const wchar_t kSettingsKey[] = L"Software\\RegiScope";
+
+void LoadLayout() {
+    const wchar_t *names[3] = {L"DivisoreSinistra", L"DivisoreEditor", L"DivisoreRam"};
+    double *fracs[3] = {&app.leftFrac, &app.edFrac, &app.ramFrac};
+    for (int i = 0; i < 3; ++i) {
+        DWORD v = 0, size = sizeof(v);
+        if (RegGetValueW(HKEY_CURRENT_USER, kSettingsKey, names[i], RRF_RT_REG_DWORD, nullptr, &v, &size) ==
+                ERROR_SUCCESS && v > 0 && v < 1000)
+            *fracs[i] = v / 1000.0;
+    }
+}
+
+void SaveLayout() {
+    HKEY key;
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, kSettingsKey, 0, nullptr, 0, KEY_SET_VALUE, nullptr, &key, nullptr) !=
+        ERROR_SUCCESS)
+        return;
+    const wchar_t *names[3] = {L"DivisoreSinistra", L"DivisoreEditor", L"DivisoreRam"};
+    double fracs[3] = {app.leftFrac, app.edFrac, app.ramFrac};
+    for (int i = 0; i < 3; ++i) {
+        DWORD v = (DWORD)std::clamp((int)(fracs[i] * 1000 + 0.5), 1, 999);
+        RegSetValueExW(key, names[i], 0, REG_DWORD, (const BYTE *)&v, sizeof(v));
+    }
+    RegCloseKey(key);
 }
 
 HFONT MakeFont(const wchar_t *face, int pt, int weight) {
@@ -695,6 +777,40 @@ LRESULT CALLBACK MainProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_SIZE:
         Layout(LOWORD(lp), HIWORD(lp));
         return 0;
+    case WM_SETCURSOR:
+        if ((HWND)wp == hwnd && LOWORD(lp) == HTCLIENT) {
+            POINT pt;
+            GetCursorPos(&pt);
+            ScreenToClient(hwnd, &pt);
+            int hit = app.dragging >= 0 ? app.dragging : HitSplitter(pt);
+            if (hit >= 0) {
+                SetCursor(LoadCursor(nullptr, hit == 0 ? IDC_SIZEWE : IDC_SIZENS));
+                return TRUE;
+            }
+        }
+        break;
+    case WM_LBUTTONDOWN: {
+        POINT pt{(short)LOWORD(lp), (short)HIWORD(lp)};
+        app.dragging = HitSplitter(pt);
+        if (app.dragging >= 0) SetCapture(hwnd);
+        return 0;
+    }
+    case WM_MOUSEMOVE:
+        if (app.dragging >= 0) DragSplitter(POINT{(short)LOWORD(lp), (short)HIWORD(lp)});
+        return 0;
+    case WM_LBUTTONUP:
+        if (app.dragging >= 0) ReleaseCapture();
+        return 0;
+    case WM_CAPTURECHANGED:
+        app.dragging = -1;
+        return 0;
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC dc = BeginPaint(hwnd, &ps);
+        PaintSplitters(dc);
+        EndPaint(hwnd, &ps);
+        return 0;
+    }
     case WM_GETMINMAXINFO: {
         auto *mm = reinterpret_cast<MINMAXINFO *>(lp);
         mm->ptMinTrackSize = {S(1060), S(600)};
@@ -770,6 +886,7 @@ LRESULT CALLBACK MainProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     }
     case WM_DESTROY:
         KillTimer(hwnd, kMemTimer);
+        SaveLayout();
         app.runner.reset(); // ferma lo snippet se è ancora in esecuzione
         dev::Shutdown();
         PostQuitMessage(0);
@@ -817,8 +934,9 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE, LPSTR, int show) {
     wc.lpszClassName = L"RegiScopeMain";
     RegisterClassW(&wc);
 
-    HWND hwnd = CreateWindowExW(0, wc.lpszClassName, L"RegiScope", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
-                                S(1360), S(880), nullptr, nullptr, inst, nullptr);
+    LoadLayout();
+    HWND hwnd = CreateWindowExW(0, wc.lpszClassName, L"RegiScope", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
+                                CW_USEDEFAULT, CW_USEDEFAULT, S(1360), S(880), nullptr, nullptr, inst, nullptr);
     ShowWindow(hwnd, show);
     UpdateWindow(hwnd);
 

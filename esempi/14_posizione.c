@@ -12,6 +12,12 @@
  * in Impostazioni → Privacy e sicurezza → Posizione e un po' di pazienza
  * (fino a 15 secondi).
  *
+ * Da dove arriva? gps_presente() dice se il PC ha un ricevitore GPS;
+ * posizione_fonte() dice se Windows ha usato il GPS
+ * (satelliti), le reti Wi-Fi vicine, la rete cellulare o solo
+ * l'indirizzo IP. Confronta la fonte con la precisione: GPS e Wi-Fi
+ * danno pochi metri, l'IP anche diversi chilometri.
+ *
  * Prova tu: calcola quanti chilometri sei dall'equatore (1 grado = 111 km).
  */
 #include <stdio.h>
@@ -21,6 +27,11 @@
 int main(void) {
     double lat = 0, lon = 0, precisione = 0;
 
+    if (gps_presente())
+        printf("Questo PC ha un ricevitore GPS.\n");
+    else
+        printf("Questo PC non ha il GPS: Windows usa Wi-Fi, rete o IP.\n");
+
     if (!posizione_leggi(&lat, &lon, &precisione)) {
         printf("Posizione non disponibile: uso Roma come esempio.\n");
         lat = 41.902782;
@@ -29,6 +40,15 @@ int main(void) {
     printf("Latitudine  %f\n", lat);
     printf("Longitudine %f\n", lon);
     printf("Precisione  %.0f metri\n", precisione);
+
+    switch (posizione_fonte()) {
+    case FONTE_GPS:       printf("Fonte       satellite (GPS)\n"); break;
+    case FONTE_WIFI:      printf("Fonte       reti Wi-Fi vicine\n"); break;
+    case FONTE_CELLULARE: printf("Fonte       rete cellulare\n"); break;
+    case FONTE_IP:        printf("Fonte       indirizzo IP\n"); break;
+    case -1:              printf("Fonte       nessuna (posizione non letta)\n"); break;
+    default:              printf("Fonte       altra o sconosciuta\n"); break;
+    }
 
     /* gli stessi 8 byte di lat, letti come intero senza segno */
     unsigned long long bit;

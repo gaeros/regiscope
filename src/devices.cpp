@@ -6,6 +6,7 @@
 #include <mfreadwrite.h>
 #include <mmsystem.h>
 #include <objbase.h>
+#include <setupapi.h>
 
 #include <algorithm>
 #include <cstdio>
@@ -346,6 +347,7 @@ struct HStr {
 };
 
 const IID kIGeolocator = {0xa9c3bf62, 0x4524, 0x4989, {0x8a, 0xa9, 0xde, 0x01, 0x9d, 0x2e, 0x55, 0x1f}};
+const IID kIGeocoordinateWithPositionData = {0x95e634be, 0xdbd6, 0x40ac, {0xb8, 0xf2, 0xa6, 0x5c, 0x03, 0x40, 0xd9, 0xa6}};
 const IID kIAsyncInfo = {0x00000036, 0x0000, 0x0000, {0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46}};
 const IID kILightSensorStatics = {0x45db8c84, 0xc3a8, 0x471e, {0x9a, 0x53, 0x64, 0x57, 0xfa, 0xd8, 0x7c, 0x0e}};
 const IID kIAccelerometerStatics = {0xa5e28b74, 0x5a87, 0x4a2d, {0xbe, 0xcc, 0x0f, 0x90, 0x6e, 0xa0, 0x61, 0xdd}};
@@ -376,6 +378,15 @@ Position ReadPositionNow(int timeoutMs) {
             VCall(coord, 7, &p.lon);      // Longitude
             VCall(coord, 9, &p.accuracy); // Accuracy (metri)
             p.valid = true;
+            // Da dove arriva il dato (GPS, Wi-Fi, IP, ...): interfaccia presente da Windows 8.1.
+            void *withSource = nullptr;
+            if (SUCCEEDED(reinterpret_cast<IUnknown *>(coord)->QueryInterface(kIGeocoordinateWithPositionData,
+                                                                              &withSource)) &&
+                withSource) {
+                int source = -1;
+                if (SUCCEEDED(VCall(withSource, 6, &source))) p.source = source; // get_PositionSource
+                Rel(withSource);
+            }
         } else if (status == 0) {
             VCall(info, 9); // Cancel
             p.message = L"Nessuna risposta dal servizio di posizione (tempo scaduto).";
@@ -647,6 +658,12 @@ int rt_posizione_leggi(double *lat, double *lon, double *precisione) {
     return 1;
 }
 
+// Fonte dell'ultima posizione letta (stessi numeri di PositionSourceName), -1 se nessuna.
+int rt_posizione_fonte() {
+    std::lock_guard<std::mutex> lock(g_stateMx);
+    return g_state.position.valid ? g_state.position.source : -1;
+}
+
 int rt_microfono_registra(short *campioni, int n) {
     ShowWindowFromSnippet();
     if (!campioni || n <= 0 || n > 16000 * 30) {
@@ -740,11 +757,83 @@ int rt_accelerometro_leggi(double *x, double *y, double *z) {
     return 1;
 }
 
+// Cerca un ricevitore GPS (GNSS) nel PC, senza accenderlo.
+// 1) driver GNSS moderni (Windows 8 e successivi): interfaccia GUID_DEVINTERFACE_GNSS;
+// 2) vecchi GPS visti come "sensore di posizione" dalla Sensor API.
+bool DetectGps(std::wstring &name) {
+    name.clear();
+    const GUID kGnssInterface = {0x3336e5e4, 0x018a, 0x4669, {0x84, 0xc5, 0xbd, 0x05, 0xf3, 0xbd, 0x36, 0x8b}};
+    HDEVINFO set = SetupDiGetClassDevsW(&kGnssInterface, nullptr, nullptr, DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
+    if (set != INVALID_HANDLE_VALUE) {
+        SP_DEVINFO_DATA info{};
+        info.cbSize = sizeof(info);
+        bool found = SetupDiEnumDeviceInfo(set, 0, &info) != FALSE;
+        if (found) {
+            wchar_t buf[256] = {};
+            if (SetupDiGetDeviceRegistryPropertyW(set, &info, SPDRP_FRIENDLYNAME, nullptr, (BYTE *)buf,
+                                                  sizeof(buf) - sizeof(wchar_t), nullptr) ||
+                SetupDiGetDeviceRegistryPropertyW(set, &info, SPDRP_DEVICEDESC, nullptr, (BYTE *)buf,
+                                                  sizeof(buf) - sizeof(wchar_t), nullptr))
+                name = buf;
+        }
+        SetupDiDestroyDeviceInfoList(set);
+        if (found) return true;
+    }
+    // ISensorManager::GetSensorsByType(SENSOR_TYPE_LOCATION_GPS): S_OK solo se ne esiste almeno uno.
+    const CLSID kSensorManager = {0x77a1c827, 0xfcd2, 0x4689, {0x89, 0x15, 0x9d, 0x61, 0x3c, 0xc5, 0xfa, 0x3e}};
+    const IID kISensorManager = {0xbd77db67, 0x45a8, 0x42dc, {0x8d, 0x00, 0x6d, 0xcf, 0x15, 0xf8, 0x37, 0x7a}};
+    const GUID kSensorTypeGps = {0xed4ca589, 0x327a, 0x4ff9, {0xa5, 0x60, 0x91, 0xda, 0x4b, 0x48, 0x27, 0x5e}};
+    void *mgr = nullptr, *list = nullptr;
+    bool found = false;
+    if (SUCCEEDED(CoCreateInstance(kSensorManager, nullptr, CLSCTX_INPROC_SERVER, kISensorManager, &mgr)) && mgr) {
+        found = VCall(mgr, 4, &kSensorTypeGps, &list) == S_OK && list; // GetSensorsByType
+        if (found) name = L"sensore di posizione GPS";
+    }
+    Rel(list);
+    Rel(mgr);
+    return found;
+}
+
+void CheckGps() {
+    std::wstring name;
+    bool has = DetectGps(name);
+    std::lock_guard<std::mutex> lock(g_stateMx);
+    g_state.gps = has ? 1 : 0;
+    g_state.gpsName = name;
+}
+
+// GPS presente nel PC? 1 sì, 0 no.
+int rt_gps_presente() {
+    RunIsolated([] { CheckGps(); });
+    Notify();
+    std::lock_guard<std::mutex> lock(g_stateMx);
+    return g_state.gps == 1 ? 1 : 0;
+}
+
 } // namespace
+
+const wchar_t *PositionSourceName(int source) {
+    switch (source) {
+    case 0: return L"rete cellulare (celle della SIM)";
+    case 1: return L"satellite (GPS/GNSS)";
+    case 2: return L"Wi-Fi (reti vicine)";
+    case 3: return L"indirizzo IP (molto approssimativa)";
+    case 5: return L"posizione predefinita (impostata in Windows)";
+    case 6: return L"approssimativa (resa imprecisa da Windows)";
+    case -1: return L"non indicata da Windows";
+    default: return L"sconosciuta";
+    }
+}
 
 void Init(HWND main) { g_main = main; }
 
-void SetWindow(HWND notify) { g_window = notify; }
+void SetWindow(HWND notify) {
+    g_window = notify;
+    if (notify) RunDetached([] {
+            CheckGps();
+            Notify();
+        });
+}
 
 void Shutdown() {
     StopPreview();
@@ -866,6 +955,8 @@ const std::vector<snippet_rt::Symbol> &Symbols() {
         {"camera_chiudi", (const void *)&rt_camera_chiudi},
         {"mostra_immagine", (const void *)&rt_mostra_immagine},
         {"posizione_leggi", (const void *)&rt_posizione_leggi},
+        {"posizione_fonte", (const void *)&rt_posizione_fonte},
+        {"gps_presente", (const void *)&rt_gps_presente},
         {"microfono_registra", (const void *)&rt_microfono_registra},
         {"altoparlante_suona", (const void *)&rt_altoparlante_suona},
         {"batteria_leggi", (const void *)&rt_batteria_leggi},

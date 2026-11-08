@@ -104,7 +104,7 @@ Ogni esercizio spiega *cosa impari*, *cosa guardare* nei pannelli RAM e CPU e ch
 ## Periferiche (pulsante "Periferiche")
 
 Apre una seconda finestra con cinque riquadri: **Fotocamera** (anteprima dal vivo, Scatta, e il pixel
-al centro mostrato byte per byte), **Posizione** (con i 64 bit della latitudine), **Microfono**
+al centro mostrato byte per byte), **Posizione** (con la presenza del GPS, la fonte del dato, GPS, Wi-Fi o IP, e i 64 bit della latitudine), **Microfono**
 (registra 10 secondi, mostra la forma d'onda e con Ascolta la fa risentire), **Batteria** e **Sensori** (luce, accelerometro).
 
 Gli snippet possono usare le stesse periferiche con `#include <periferiche.h>`:
@@ -115,6 +115,8 @@ Gli snippet possono usare le stesse periferiche con `#include <periferiche.h>`:
 | `camera_scatta(rgb, L, A)` | foto ridotta a L x A pixel, 3 byte (R, G, B) per pixel |
 | `mostra_immagine(rgb, L, A)` | mostra un'immagine nella finestra Periferiche |
 | `posizione_leggi(&lat, &lon, &precisione)` | posizione in gradi e precisione in metri |
+| `posizione_fonte()` | da dove arriva l'ultima posizione: `FONTE_GPS`, `FONTE_WIFI`, `FONTE_CELLULARE`, `FONTE_IP`, ... |
+| `gps_presente()` | 1 se il PC ha un ricevitore GPS, 0 se no |
 | `microfono_registra(campioni, n)` | n campioni a 16000 al secondo (short) |
 | `altoparlante_suona(campioni, n)` | fa ascoltare dei campioni |
 | `batteria_leggi(&percentuale, &in_carica)` | stato della batteria |

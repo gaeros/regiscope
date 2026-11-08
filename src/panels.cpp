@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <vector>
 
 ViewState g_view;
 
@@ -114,44 +115,46 @@ uint64_t LoadLE(const uint8_t *b, size_t n) {
 
 // ---------------------------------------------------------------- RAM
 
-void PaintSlots(Painter &p, int x, int &y, int right) {
+// Una riga di riepilogo dei banchi fisici: "16 GB · 8 banchi da 2,0 GB LPDDR4X · 4267 MT/s · Samsung".
+std::wstring MemSummary() {
     const MemInfo &mem = g_view.mem;
-    int lh = p.LineHeight(g_fonts.ui);
-    if (!g_view.memReady) {
-        p.Text(x, y, L"Lettura dei banchi di RAM…", g_fonts.ui, theme::quiet);
-        y += lh;
-        return;
+    if (!g_view.memReady) return L"lettura dei banchi…";
+    if (!mem.ok) return mem.error;
+    if (mem.modules.empty()) return L"banchi non riportati dal sistema";
+
+    struct Group { uint64_t capacity; std::wstring type; uint32_t speed; int count; };
+    std::vector<Group> groups;
+    uint64_t total = 0;
+    bool sameMaker = true;
+    for (const auto &m : mem.modules) {
+        total += m.capacity;
+        if (m.manufacturer != mem.modules[0].manufacturer) sameMaker = false;
+        auto it = std::find_if(groups.begin(), groups.end(), [&](const Group &g) {
+            return g.capacity == m.capacity && g.type == m.type && g.speed == m.speed;
+        });
+        if (it != groups.end()) ++it->count;
+        else groups.push_back({m.capacity, m.type, m.speed, 1});
     }
-    if (!mem.ok || mem.modules.empty()) {
-        p.Text(x, y, mem.ok ? L"Nessun banco di RAM riportato dal sistema." : mem.error, g_fonts.ui, theme::quiet);
-        y += lh;
-        return;
-    }
-    int n = std::max(mem.totalSlots, (int)mem.modules.size());
-    int gap = S(8);
-    int boxW = std::min(S(180), (right - x - gap * (n - 1)) / n);
-    int lhSmall = p.LineHeight(g_fonts.smallFont);
-    int boxH = S(10) + p.LineHeight(g_fonts.bold) + 2 * lhSmall + S(8);
-    for (int i = 0; i < n; ++i) {
-        RECT b{x + i * (boxW + gap), y, x + i * (boxW + gap) + boxW, y + boxH};
-        if (i < (int)mem.modules.size()) {
-            const MemModule &m = mem.modules[i];
-            p.RoundBox(b, theme::accentSoft, theme::accent, S(8));
-            int ty = b.top + S(6);
-            RECT t{b.left + S(8), ty, b.right - S(6), ty + p.LineHeight(g_fonts.bold)};
-            p.TextIn(t, m.locator.empty() ? L"Slot " + std::to_wstring(i + 1) : m.locator, g_fonts.bold, theme::text);
-            t.top = t.bottom; t.bottom = t.top + lhSmall;
-            p.TextIn(t, FormatBytes(m.capacity) + (m.type.empty() ? L"" : L" " + m.type), g_fonts.smallFont, theme::text);
-            t.top = t.bottom; t.bottom = t.top + lhSmall;
-            std::wstring line3 = m.speed ? std::to_wstring(m.speed) + L" MT/s" : L"";
-            if (!m.manufacturer.empty()) line3 += (line3.empty() ? L"" : L" · ") + m.manufacturer;
-            p.TextIn(t, line3, g_fonts.smallFont, theme::quiet);
-        } else {
-            p.RoundBox(b, theme::panel, theme::border, S(8));
-            p.TextIn(b, L"slot vuoto", g_fonts.smallFont, theme::quiet, DT_CENTER | DT_VCENTER);
+
+    std::wstring s = FormatBytes(total) + L" · ";
+    if (groups.size() == 1) {
+        const Group &g = groups[0];
+        s += std::to_wstring(g.count) + (g.count == 1 ? L" banco da " : L" banchi da ") + FormatBytes(g.capacity);
+        if (!g.type.empty()) s += L" " + g.type;
+        if (g.speed) s += L" · " + std::to_wstring(g.speed) + L" MT/s";
+    } else {
+        for (size_t i = 0; i < groups.size(); ++i) {
+            const Group &g = groups[i];
+            if (i) s += L" + ";
+            s += std::to_wstring(g.count) + L" × " + FormatBytes(g.capacity);
+            if (!g.type.empty()) s += L" " + g.type;
+            if (g.speed) s += L" " + std::to_wstring(g.speed) + L" MT/s";
         }
     }
-    y += boxH;
+    if (sameMaker && !mem.modules[0].manufacturer.empty()) s += L" · " + mem.modules[0].manufacturer;
+    int empty = mem.totalSlots - (int)mem.modules.size();
+    if (empty > 0) s += L" · " + std::to_wstring(empty) + (empty == 1 ? L" slot libero" : L" slot liberi");
+    return s;
 }
 
 void PaintUsage(Painter &p, int x, int &y, int right) {
@@ -185,26 +188,26 @@ const HeapBlock *PrevHeapBlock(uint64_t addr) {
     return nullptr;
 }
 
-void PaintSnippetData(Painter &p, int x, int &y, int right, int bottom) {
+// Righe dei dati dello snippet (stack e heap), a partire da y; nessun limite in basso:
+// l'area ha la sua barra di scorrimento. Restituisce la y dopo l'ultima riga.
+int PaintSnippetRows(Painter &p, int x, int y, int right, int clipTop, int clipBottom) {
     const Snapshot &s = g_view.cur;
-    int lh = p.LineHeight(g_fonts.ui);
-    p.Text(x, y, L"Dati dello snippet", g_fonts.bold, theme::text);
-    y += p.LineHeight(g_fonts.bold) + S(4);
     if (!s.valid) {
-        RECT r{x, y, right, bottom};
+        RECT r{x, y, right, y + S(200)};
         p.WrapText(r, L"Premi Avanti (F10) per eseguire lo snippet passo passo: qui compaiono lo stack della "
                       L"funzione corrente e i blocchi malloc, bit per bit.",
                    g_fonts.ui, theme::quiet);
-        return;
+        return y + p.LineHeight(g_fonts.ui) * 3;
     }
 
     int labelW = p.Width(L"RSP+0x000 ", g_fonts.mono);
-    int hexW = p.Width(L" 0000000000000000", g_fonts.mono);
+    int hexW = p.Width(L"0000000000000000", g_fonts.mono) + S(8);
     int cell = FitCell(right - x - labelW - hexW, 64);
     int rowH = std::max(cell + S(4), p.LineHeight(g_fonts.mono) + S(2));
     int bitsX = x + labelW;
     int bitsW = BitRowWidth(cell, 64);
-    bool truncated = false;
+    // Disegna solo le righe visibili; le altre contano solo per l'altezza.
+    auto visible = [&](int yy) { return yy + rowH > clipTop && yy < clipBottom; };
 
     wchar_t buf[96];
     swprintf(buf, 96, L"Stack · da RSP = 0x%llX, 8 byte per riga", (unsigned long long)s.stackBase);
@@ -212,65 +215,172 @@ void PaintSnippetData(Painter &p, int x, int &y, int right, int bottom) {
     y += p.LineHeight(g_fonts.smallFont) + S(2);
 
     for (size_t off = 0; off < s.stack.size(); off += 8) {
-        if (y + rowH > bottom - lh) { truncated = true; break; }
-        size_t n = std::min<size_t>(8, s.stack.size() - off);
-        uint64_t v = LoadLE(&s.stack[off], n);
-        uint64_t changed = 0;
-        for (size_t j = 0; j < n; ++j) {
-            uint8_t old;
-            if (PrevStackByte(s.stackBase + off + j, old)) changed |= (uint64_t)(old ^ s.stack[off + j]) << (8 * j);
+        if (visible(y)) {
+            size_t n = std::min<size_t>(8, s.stack.size() - off);
+            uint64_t v = LoadLE(&s.stack[off], n);
+            uint64_t changed = 0;
+            for (size_t j = 0; j < n; ++j) {
+                uint8_t old;
+                if (PrevStackByte(s.stackBase + off + j, old)) changed |= (uint64_t)(old ^ s.stack[off + j]) << (8 * j);
+            }
+            swprintf(buf, 96, L"RSP+0x%02llX", (unsigned long long)off);
+            p.Text(x, y, buf, g_fonts.mono, theme::quiet);
+            DrawBits(p, bitsX, y + (rowH - cell) / 2 - S(1), cell, cell, v, changed, 64);
+            p.Text(bitsX + bitsW + S(8), y, Hex64(v), g_fonts.mono, theme::text);
         }
-        swprintf(buf, 96, L"RSP+0x%02llX", (unsigned long long)off);
-        p.Text(x, y, buf, g_fonts.mono, theme::quiet);
-        DrawBits(p, bitsX, y + (rowH - cell) / 2 - S(1), cell, cell, v, changed, 64);
-        p.Text(bitsX + bitsW + S(8), y, Hex64(v), g_fonts.mono, theme::text);
         y += rowH;
     }
 
-    if (!truncated && !s.heap.empty() && y + 2 * rowH < bottom - lh) {
+    if (!s.heap.empty()) {
         y += S(6);
         p.Text(x, y, L"Heap · blocchi malloc", g_fonts.smallFont, theme::quiet);
         y += p.LineHeight(g_fonts.smallFont) + S(2);
         for (const auto &b : s.heap) {
-            if (y + rowH > bottom - lh) { truncated = true; break; }
-            swprintf(buf, 96, L"0x%llX · %llu byte%ls", (unsigned long long)b.addr, (unsigned long long)b.size,
-                     b.freed ? L" · liberato" : L"");
-            p.Text(x, y, buf, g_fonts.mono, b.freed ? theme::quiet : theme::text);
+            if (visible(y)) {
+                swprintf(buf, 96, L"0x%llX · %llu byte%ls", (unsigned long long)b.addr, (unsigned long long)b.size,
+                         b.freed ? L" · liberato" : L"");
+                p.Text(x, y, buf, g_fonts.mono, b.freed ? theme::quiet : theme::text);
+            }
             y += rowH;
             if (b.freed) continue;
             const HeapBlock *old = PrevHeapBlock(b.addr);
             for (size_t off = 0; off < b.bytes.size(); off += 8) {
-                if (y + rowH > bottom - lh) { truncated = true; break; }
-                size_t n = std::min<size_t>(8, b.bytes.size() - off);
-                uint64_t v = LoadLE(&b.bytes[off], n);
-                uint64_t changed = 0;
-                if (old && off + n <= old->bytes.size()) changed = v ^ LoadLE(&old->bytes[off], n);
-                int nbits = (int)n * 8;
-                swprintf(buf, 96, L"+0x%02llX", (unsigned long long)off);
-                p.Text(x, y, buf, g_fonts.mono, theme::quiet);
-                int shift = BitRowWidth(cell, 64) - BitRowWidth(cell, nbits);
-                DrawBits(p, bitsX + shift, y + (rowH - cell) / 2 - S(1), cell, cell, v, changed, nbits);
-                p.Text(bitsX + bitsW + S(8), y, Hex64(v), g_fonts.mono, theme::text);
+                if (visible(y)) {
+                    size_t n = std::min<size_t>(8, b.bytes.size() - off);
+                    uint64_t v = LoadLE(&b.bytes[off], n);
+                    uint64_t changed = 0;
+                    if (old && off + n <= old->bytes.size()) changed = v ^ LoadLE(&old->bytes[off], n);
+                    int nbits = (int)n * 8;
+                    swprintf(buf, 96, L"+0x%02llX", (unsigned long long)off);
+                    p.Text(x, y, buf, g_fonts.mono, theme::quiet);
+                    int shift = BitRowWidth(cell, 64) - BitRowWidth(cell, nbits);
+                    DrawBits(p, bitsX + shift, y + (rowH - cell) / 2 - S(1), cell, cell, v, changed, nbits);
+                    p.Text(bitsX + bitsW + S(8), y, Hex64(v), g_fonts.mono, theme::text);
+                }
                 y += rowH;
             }
-            if (truncated) break;
         }
     }
-    if (truncated) p.Text(x, y, L"… altri dati non mostrati (allarga la finestra)", g_fonts.smallFont, theme::quiet);
+    return y + S(6);
 }
 
-void PaintRam(Painter &p, const RECT &rc) {
+// Intestazione del pannello RAM (titolo, riepilogo banchi, occupazione, titolo dei dati).
+// Restituisce la y dove inizia l'area scorrevole dei dati dello snippet.
+int PaintRamHeader(Painter &p, const RECT &rc, bool draw) {
     int pad = S(14);
-    int x = rc.left + pad, y = rc.top + pad, right = rc.right - pad, bottom = rc.bottom - pad;
-    int w = p.Text(x, y, L"RAM", g_fonts.bold, theme::text);
-    p.Text(x + w + S(10), y + p.LineHeight(g_fonts.bold) - p.LineHeight(g_fonts.ui), L"banchi fisici del PC",
-           g_fonts.ui, theme::quiet);
-    y += p.LineHeight(g_fonts.bold) + S(10);
-    PaintSlots(p, x, y, right);
-    y += S(12);
-    PaintUsage(p, x, y, right);
-    y += S(16);
-    PaintSnippetData(p, x, y, right, bottom);
+    int x = rc.left + pad, y = rc.top + pad, right = rc.right - pad;
+    int boldH = p.LineHeight(g_fonts.bold), uiH = p.LineHeight(g_fonts.ui);
+    if (draw) {
+        int w = p.Text(x, y, L"RAM", g_fonts.bold, theme::text);
+        RECT t{x + w + S(10), y + boldH - uiH, right, y + boldH};
+        p.TextIn(t, MemSummary(), g_fonts.ui, theme::quiet);
+    }
+    y += boldH + S(8);
+    if (draw) PaintUsage(p, x, y, right);
+    else y += uiH + S(4) + S(8);
+    y += S(14);
+    if (draw) p.Text(x, y, L"Dati dello snippet", g_fonts.bold, theme::text);
+    y += boldH + S(4);
+    return y;
+}
+
+const wchar_t kRamDataClass[] = L"RegiScopeRamData";
+
+// Posiziona l'area scorrevole dentro il pannello RAM, sotto l'intestazione.
+void LayoutRamData(HWND panel) {
+    HWND data = FindWindowExW(panel, nullptr, kRamDataClass, nullptr);
+    if (!data) return;
+    RECT rc;
+    GetClientRect(panel, &rc);
+    HDC dc = GetDC(panel);
+    Painter p{dc};
+    int top = PaintRamHeader(p, rc, false);
+    ReleaseDC(panel, dc);
+    int left = rc.left + S(14), right = rc.right - S(4), bottom = rc.bottom - S(8);
+    MoveWindow(data, left, top, std::max(0, right - left), std::max(0, bottom - top), TRUE);
+}
+
+void PaintRam(Painter &p, const RECT &rc) { PaintRamHeader(p, rc, true); }
+
+void ScrollRamData(HWND hwnd, int pos) {
+    SCROLLINFO si{sizeof(si), SIF_ALL};
+    GetScrollInfo(hwnd, SB_VERT, &si);
+    int maxPos = std::max(0, si.nMax - (int)si.nPage + 1);
+    pos = std::clamp(pos, 0, maxPos);
+    if (pos == si.nPos) return;
+    si.fMask = SIF_POS;
+    si.nPos = pos;
+    SetScrollInfo(hwnd, SB_VERT, &si, TRUE);
+    InvalidateRect(hwnd, nullptr, FALSE);
+}
+
+LRESULT CALLBACK RamDataProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+    static int wheelAccum = 0;
+    switch (msg) {
+    case WM_ERASEBKGND:
+        return 1;
+    case WM_SIZE:
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return 0;
+    case WM_MOUSEWHEEL: {
+        wheelAccum += GET_WHEEL_DELTA_WPARAM(wp);
+        int notches = wheelAccum / WHEEL_DELTA;
+        wheelAccum -= notches * WHEEL_DELTA;
+        if (notches) ScrollRamData(hwnd, GetScrollPos(hwnd, SB_VERT) - notches * S(54));
+        return 0;
+    }
+    case WM_VSCROLL: {
+        SCROLLINFO si{sizeof(si), SIF_ALL};
+        GetScrollInfo(hwnd, SB_VERT, &si);
+        int pos = si.nPos, line = S(18);
+        switch (LOWORD(wp)) {
+        case SB_LINEUP: pos -= line; break;
+        case SB_LINEDOWN: pos += line; break;
+        case SB_PAGEUP: pos -= (int)si.nPage; break;
+        case SB_PAGEDOWN: pos += (int)si.nPage; break;
+        case SB_THUMBTRACK:
+        case SB_THUMBPOSITION: pos = si.nTrackPos; break;
+        case SB_TOP: pos = 0; break;
+        case SB_BOTTOM: pos = si.nMax; break;
+        }
+        ScrollRamData(hwnd, pos);
+        return 0;
+    }
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC dc = BeginPaint(hwnd, &ps);
+        RECT rc;
+        GetClientRect(hwnd, &rc);
+        HDC mem = CreateCompatibleDC(dc);
+        HBITMAP bmp = CreateCompatibleBitmap(dc, std::max<LONG>(1, rc.right), std::max<LONG>(1, rc.bottom));
+        HGDIOBJ oldBmp = SelectObject(mem, bmp);
+        HGDIOBJ oldFont = SelectObject(mem, g_fonts.ui);
+        SetBkMode(mem, TRANSPARENT);
+
+        Painter p{mem};
+        p.Fill(rc, theme::panel);
+        int scroll = GetScrollPos(hwnd, SB_VERT);
+        int end = PaintSnippetRows(p, 0, -scroll, rc.right - S(10), 0, rc.bottom);
+        int contentH = end + scroll;
+
+        BitBlt(dc, 0, 0, rc.right, rc.bottom, mem, 0, 0, SRCCOPY);
+        SelectObject(mem, oldFont);
+        SelectObject(mem, oldBmp);
+        DeleteObject(bmp);
+        DeleteDC(mem);
+        EndPaint(hwnd, &ps);
+
+        // Aggiorna la barra (sempre visibile, disattivata se tutto ci sta: la larghezza non cambia).
+        SCROLLINFO si{sizeof(si), SIF_RANGE | SIF_PAGE | SIF_DISABLENOSCROLL};
+        si.nMin = 0;
+        si.nMax = std::max(0, contentH - 1);
+        si.nPage = (UINT)std::max<LONG>(1, rc.bottom);
+        SetScrollInfo(hwnd, SB_VERT, &si, TRUE);
+        if (GetScrollPos(hwnd, SB_VERT) != scroll) InvalidateRect(hwnd, nullptr, FALSE);
+        return 0;
+    }
+    }
+    return DefWindowProcW(hwnd, msg, wp, lp);
 }
 
 // ---------------------------------------------------------------- CPU
@@ -336,6 +446,8 @@ void PaintCpu(Painter &p, const RECT &rc) {
     int cell = FitCell(right - x - nameW - hexW, 64);
     int flagsH = p.LineHeight(g_fonts.smallFont) * 3 + S(28);
     int avail = bottom - y - flagsH;
+    // Pannello basso: rimpicciolisci i bit così tutti i 17 registri restano visibili.
+    cell = std::max(3, std::min(cell, avail / (int)(sizeof(kRegs) / sizeof(kRegs[0])) - S(2)));
     int rowH = std::clamp(avail / (int)(sizeof(kRegs) / sizeof(kRegs[0])), cell + S(2), cell + S(10));
     rowH = std::max(rowH, p.LineHeight(g_fonts.mono));
     int bitsW = BitRowWidth(cell, 64);
@@ -378,10 +490,24 @@ LRESULT CALLBACK PanelProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
     case WM_ERASEBKGND:
         return 1;
+    case WM_CREATE: {
+        wchar_t cls[32];
+        GetClassNameW(hwnd, cls, 32);
+        if (wcscmp(cls, kRamClass) == 0)
+            CreateWindowExW(0, kRamDataClass, L"", WS_CHILD | WS_VISIBLE | WS_VSCROLL, 0, 0, 10, 10, hwnd, nullptr,
+                            ((LPCREATESTRUCTW)lp)->hInstance, nullptr);
+        return 0;
+    }
     case WM_SIZE:
+        LayoutRamData(hwnd);
         InvalidateRect(hwnd, nullptr, FALSE);
         return 0;
+    case WM_MOUSEWHEEL:
+        if (HWND data = FindWindowExW(hwnd, nullptr, kRamDataClass, nullptr)) return SendMessageW(data, msg, wp, lp);
+        break;
     case WM_PAINT: {
+        // Il pannello RAM viene invalidato dall'esterno: ridisegna anche l'area dei dati.
+        if (HWND data = FindWindowExW(hwnd, nullptr, kRamDataClass, nullptr)) InvalidateRect(data, nullptr, FALSE);
         PAINTSTRUCT ps;
         HDC dc = BeginPaint(hwnd, &ps);
         RECT rc;
@@ -424,10 +550,16 @@ void RegisterPanelClasses(HINSTANCE inst, const PanelFonts &fonts) {
         wc.lpszClassName = name;
         RegisterClassW(&wc);
     }
+    WNDCLASSW dc{};
+    dc.lpfnWndProc = RamDataProc;
+    dc.hInstance = inst;
+    dc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    dc.lpszClassName = kRamDataClass;
+    RegisterClassW(&dc);
 }
 
 HWND CreateRamPanel(HWND parent, int id) {
-    return CreateWindowExW(0, kRamClass, L"", WS_CHILD | WS_VISIBLE, 0, 0, 10, 10, parent, (HMENU)(INT_PTR)id,
+    return CreateWindowExW(0, kRamClass, L"", WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN, 0, 0, 10, 10, parent, (HMENU)(INT_PTR)id,
                            (HINSTANCE)GetWindowLongPtrW(parent, GWLP_HINSTANCE), nullptr);
 }
 

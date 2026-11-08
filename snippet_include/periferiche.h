@@ -13,6 +13,21 @@ void mostra_immagine(const unsigned char *rgb, int larghezza, int altezza);
 /* Posizione: gradi di latitudine e longitudine, precisione in metri. */
 int posizione_leggi(double *latitudine, double *longitudine, double *precisione);
 
+/* Da dove arriva l'ultima posizione letta con posizione_leggi
+   (-1 se non ne è stata letta nessuna). */
+#define FONTE_CELLULARE    0  /* celle della rete mobile (SIM) */
+#define FONTE_GPS          1  /* satellite (GPS/GNSS) */
+#define FONTE_WIFI         2  /* reti Wi-Fi vicine */
+#define FONTE_IP           3  /* indirizzo IP: molto approssimativa */
+#define FONTE_SCONOSCIUTA  4
+#define FONTE_PREDEFINITA  5  /* posizione impostata a mano in Windows */
+#define FONTE_APPROSSIMATA 6  /* resa imprecisa da Windows per privacy */
+int posizione_fonte(void);
+
+/* 1 se nel PC c'è un ricevitore GPS (satellitare), 0 se no:
+   senza GPS la posizione arriva da Wi-Fi, rete cellulare o indirizzo IP. */
+int gps_presente(void);
+
 /* Microfono: 16000 campioni al secondo, ognuno da -32768 a 32767.
    Restituisce quanti campioni ha registrato (0 se errore). */
 int microfono_registra(short *campioni, int quanti);

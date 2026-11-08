@@ -58,7 +58,7 @@ add_executable(RegiScope WIN32
   res/regiscope.rc)
 target_compile_definitions(RegiScope PRIVATE UNICODE _UNICODE NOMINMAX _CRT_SECURE_NO_WARNINGS)
 target_link_libraries(RegiScope PRIVATE libtcc Zydis wbemuuid ole32 oleaut32 psapi comdlg32 comctl32
-  mfplat mf mfreadwrite mfuuid winmm)
+  mfplat mf mfreadwrite mfuuid winmm setupapi)
 if(MSVC)
   target_compile_options(RegiScope PRIVATE /utf-8 /W3)
 endif()
