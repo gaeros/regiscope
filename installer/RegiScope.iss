@@ -6,7 +6,7 @@
 
 #define AppName      "RegiScope"
 #ifndef AppVersion
-  #define AppVersion "0.2"
+  #define AppVersion "0.3"
 #endif
 #define AppPublisher "gaeros"
 #define AppExe       "RegiScope.exe"

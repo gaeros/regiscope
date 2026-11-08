@@ -185,6 +185,13 @@ void PaintPosition(HDC dc, const dev::State &st) {
     int lh = LineH(dc, g_fonts.ui);
     int y = in.top;
     const dev::Position &p = st.position;
+    // Il PC ha un ricevitore GPS? (se no, la posizione arriva da Wi-Fi, rete o IP)
+    if (st.gps >= 0) {
+        std::wstring gps = st.gps == 1 ? L"GPS nel PC   sì" + (st.gpsName.empty() ? L"" : L" · " + st.gpsName)
+                                       : L"GPS nel PC   no (posizione da Wi-Fi, rete cellulare o IP)";
+        TextAt(dc, in.left, y, gps.c_str(), g_fonts.mono, st.gps == 1 ? theme::accent : theme::quiet, in.right);
+        y += lh + S(6);
+    }
     if (st.positionBusy) {
         TextAt(dc, in.left, y, L"Ricerca della posizione…", g_fonts.ui, theme::quiet, in.right);
         return;
@@ -207,6 +214,9 @@ void PaintPosition(HDC dc, const dev::State &st) {
     y += lh + S(2);
     swprintf(buf, 128, L"Precisione   ± %.0f m", p.accuracy);
     TextAt(dc, in.left, y, buf, g_fonts.mono, theme::text);
+    y += lh + S(2);
+    std::wstring from = std::wstring(L"Fonte        ") + dev::PositionSourceName(p.source);
+    TextAt(dc, in.left, y, from.c_str(), g_fonts.mono, p.source == 1 ? theme::accent : theme::text, in.right);
     y += lh + S(8);
     // La latitudine è un double: 64 bit (segno, esponente, mantissa).
     uint64_t bits;

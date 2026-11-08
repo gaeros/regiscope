@@ -21,6 +21,7 @@ struct Image {
 struct Position {
     bool valid = false;
     double lat = 0, lon = 0, accuracy = 0; // gradi, gradi, metri
+    int source = -1;                       // da dove arriva: vedi PositionSourceName()
     std::wstring message;                  // errore o stato
 };
 
@@ -48,6 +49,11 @@ struct Sensors {
     std::wstring message;
 };
 
+// Fonte della posizione (valori di Windows.Devices.Geolocation.PositionSource):
+// 0 rete cellulare, 1 satellite (GPS), 2 Wi-Fi, 3 indirizzo IP, 4 sconosciuta,
+// 5 posizione predefinita (impostata a mano), 6 resa approssimativa. -1 = non letta.
+const wchar_t *PositionSourceName(int source);
+
 // Stato mostrato nella finestra Periferiche.
 struct State {
     Image image;
@@ -56,6 +62,8 @@ struct State {
     bool previewOn = false;
     Position position;
     bool positionBusy = false;
+    int gps = -1;        // ricevitore GPS nel PC: 1 sì, 0 no, -1 non ancora controllato
+    std::wstring gpsName; // nome del dispositivo GPS, se c'è
     Audio audio;
     bool audioBusy = false;
     DWORD recordStart = 0; // GetTickCount() all'inizio della registrazione
