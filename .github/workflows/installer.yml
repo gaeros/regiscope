@@ -1,0 +1,60 @@
+# Crea l'installer di RegiScope (RegiScope-Setup-<versione>.exe) su un PC Windows di GitHub.
+#
+# - Pull request e "Run workflow" a mano: compila e allega il setup alla corsa (sezione Artifacts).
+# - Tag "v*" (es. v0.3): compila e pubblica il setup nella pagina Releases del repo.
+name: Installer Windows
+
+on:
+  pull_request:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write   # serve per pubblicare la Release
+
+jobs:
+  setup:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Versione
+        id: ver
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_TYPE -eq 'tag') { $v = $env:GITHUB_REF_NAME.TrimStart('v') }
+          else { $v = "0.0-prova-$($env:GITHUB_RUN_NUMBER)" }
+          "version=$v" >> $env:GITHUB_OUTPUT
+
+      - name: Compila RegiScope (Release x64)
+        run: |
+          cmake -S . -B build-installer -G "Visual Studio 17 2022" -A x64
+          cmake --build build-installer --config Release
+
+      - name: Inno Setup
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
+          & $iscc "/DBuildDir=..\build-installer\Release" "/DAppVersion=${{ steps.ver.outputs.version }}" installer\RegiScope.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Allega il setup alla corsa
+        uses: actions/upload-artifact@v4
+        with:
+          name: RegiScope-Setup-${{ steps.ver.outputs.version }}
+          path: installer/output/*.exe
+
+      - name: Pubblica nella pagina Releases
+        if: github.ref_type == 'tag'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $exe = Get-ChildItem installer\output\*.exe | Select-Object -First 1
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) { gh release upload $tag $exe.FullName --clobber }
+          else { gh release create $tag $exe.FullName --title "RegiScope $tag" --generate-notes }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

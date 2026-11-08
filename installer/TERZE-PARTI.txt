@@ -1,0 +1,19 @@
+RegiScope - componenti di terze parti
+=====================================
+
+RegiScope.exe contiene, compilate al suo interno, queste librerie:
+
+* TinyCC (libtcc) - compilatore C che compila gli snippet in memoria.
+  Licenza: GNU Lesser General Public License 2.1 (TinyCC-LGPL-2.1.txt).
+  Sorgenti: https://github.com/TinyCC/tinycc
+  (commit c638ddfb593214813aa33536fb993b9a45d23793)
+
+* Zydis 4.1.0 e Zycore - disassemblatore x86-64.
+  Licenza: MIT (Zydis-MIT.txt, Zycore-MIT.txt).
+  Sorgenti: https://github.com/zyantific/zydis
+
+Come previsto dalla LGPL, puoi ricompilare RegiScope con una versione modificata
+di TinyCC: i sorgenti completi di RegiScope e le istruzioni di compilazione sono su
+https://github.com/gaeros/regiscope (basta cambiare GIT_TAG di tinycc in CMakeLists.txt).
+
+RegiScope stesso e' distribuito con licenza PolyForm Noncommercial 1.0.0 (LICENSE.md).

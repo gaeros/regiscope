@@ -23,6 +23,27 @@ build\Release\RegiScope.exe
 Accanto all'eseguibile vengono copiate le cartelle `snippet_include` (header per gli
 snippet) e `snippet_runtime` (funzioni di supporto di TinyCC): servono durante l'esecuzione.
 
+## Installare RegiScope
+
+Scarica `RegiScope-Setup-<versione>.exe` dalla pagina
+[Releases](https://github.com/gaeros/regiscope/releases), fai doppio clic e segui la procedura.
+Non servono altri programmi né diritti di amministratore (Windows 10/11 a 64 bit).
+Il setup installa RegiScope con esempi e header degli snippet, mette l'icona nel menu Start
+e, se spuntata, sul desktop. Si disinstalla da Impostazioni → App.
+
+Al primo avvio Windows potrebbe mostrare "Windows ha protetto il PC" perché il setup non è
+firmato digitalmente: clic su **Ulteriori informazioni → Esegui comunque**.
+
+### Pubblicare una nuova versione
+
+Il setup lo crea GitHub da solo (`.github/workflows/installer.yml`, con Inno Setup).
+Per pubblicare una versione basta creare un tag che inizia con `v`, per esempio dalla pagina
+Releases → **Draft a new release** → tag `v0.3` → **Publish release**: dopo qualche minuto
+il file `RegiScope-Setup-0.3.exe` compare nella release.
+Ogni pull request crea anche un setup di prova, scaricabile dalla scheda **Actions** (sezione Artifacts).
+
+Per creare il setup sul proprio PC: installa Inno Setup 6 e lancia `installer\crea-installer.bat`.
+
 ## Tasti
 
 | Tasto | Azione |
@@ -122,6 +143,9 @@ puoi studiarlo, modificarlo e condividerlo liberamente per scopi non commerciali
 
 Le librerie esterne non sono incluse in questo repository: CMake le scarica durante la
 configurazione e restano sotto le loro licenze.
+Il setup invece contiene TinyCC (LGPL 2.1) e Zydis/Zycore (MIT) compilati dentro RegiScope.exe:
+i loro testi di licenza sono installati nella cartella `licenze`, e chi vuole ricompilare RegiScope
+con una versione modificata di TinyCC può farlo con i sorgenti e le istruzioni di questo repository.
 
 - [TinyCC](https://github.com/TinyCC/tinycc): GNU LGPL 2.1
 - [Zydis](https://github.com/zyantific/zydis): MIT

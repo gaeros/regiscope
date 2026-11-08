@@ -4,6 +4,11 @@ project(RegiScope LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Runtime C/C++ di Visual Studio incluso nell'exe (/MT): RegiScope parte su qualsiasi PC
+# senza installare il "Visual C++ Redistributable". Vale anche per Zydis e libtcc.
+set(CMAKE_POLICY_DEFAULT_CMP0091 NEW)
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+
 if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
   message(FATAL_ERROR "RegiScope va compilato a 64 bit (x64).")
 endif()
@@ -66,6 +71,12 @@ add_custom_command(TARGET RegiScope POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:RegiScope>/snippet_runtime
   COMMAND ${CMAKE_COMMAND} -E copy ${TCC_DIR}/lib/libtcc1.c $<TARGET_FILE_DIR:RegiScope>/snippet_runtime/
   COMMAND ${CMAKE_COMMAND} -E copy ${TCC_DIR}/win32/lib/chkstk.S $<TARGET_FILE_DIR:RegiScope>/snippet_runtime/
-  COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/esempi $<TARGET_FILE_DIR:RegiScope>/esempi)
+  COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/esempi $<TARGET_FILE_DIR:RegiScope>/esempi
+  # Licenze delle librerie incluse nell'eseguibile (richieste per distribuire il setup).
+  COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:RegiScope>/licenze
+  COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/installer/TERZE-PARTI.txt $<TARGET_FILE_DIR:RegiScope>/licenze/
+  COMMAND ${CMAKE_COMMAND} -E copy ${TCC_DIR}/COPYING $<TARGET_FILE_DIR:RegiScope>/licenze/TinyCC-LGPL-2.1.txt
+  COMMAND ${CMAKE_COMMAND} -E copy ${zydis_SOURCE_DIR}/LICENSE $<TARGET_FILE_DIR:RegiScope>/licenze/Zydis-MIT.txt
+  COMMAND ${CMAKE_COMMAND} -E copy ${zydis_SOURCE_DIR}/dependencies/zycore/LICENSE $<TARGET_FILE_DIR:RegiScope>/licenze/Zycore-MIT.txt)
 
 set_property(DIRECTORY ${CMAKE_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT RegiScope)
